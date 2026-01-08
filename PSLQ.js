@@ -236,7 +236,7 @@ function give(tylerNum, funcs, precision = DEFAULT_PRECISION) {
  * @param {boolean} [options.verbose=false] - Log progress.
  */
 
-function pslq_bigint(xInput, precision, iterations = 10000) {
+function pslq(xInput, precision, iterations = 10000) {
   const funcs = ["all"];
   const n = xInput.length;
   const gamma = give("1.154700538379251529", funcs, precision); // sqrt(4/3)
