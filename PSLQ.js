@@ -235,195 +235,121 @@ function give(tylerNum, funcs, precision = DEFAULT_PRECISION) {
  * @param {number} [options.maxsteps=100] - Max iterations.
  * @param {boolean} [options.verbose=false] - Log progress.
  */
-/**
- * PSLQ Algorithm (Final Fix: Corrected function attachment)
- */
-s[k] = sqrt(x[k]^2 + s[k+1]^2)
-        x[k][104](x[k], t1);       // t1 = x[k]^2
-        s[k+1][104](s[k+1], t2);   // t2 = s[k+1]^2
-        t1[101](t2, t_obj);        // t_obj = sum
-        s[k] = t_obj[13]();        // s[k] = sqrt(sum)
-    }
 
-    // Normalize y and s by t = s[1]
-    const t = s[1];
-    for (let k = 1; k <= n; k++) {
-        y[k] = give("0", ["all"], work_prec);
-        x[k][103](t, y[k]); // y[k] = x[k] / t
-        s[k][103](t, s[k]); // s[k] = s[k] / t
-    }
+function pslq_bigint(xInput, precision, iterations = 10000) {
+  const funcs = ["all"];
+  const n = xInput.length;
+  const gamma = give("1.154700538379251529", funcs, precision); // sqrt(4/3)
+  const TOL = give("0.000000000000000000000000000001", funcs, precision);
 
-    // Compute H (Lower Trapezoidal Matrix)
-    // H[i][j] calculation is critical
-    for (let i = 1; i <= n; i++) {
-        H[i] = [null];
-        for (let j = 1; j < i; j++) {
-             // H[i][j] = -y[i]*y[j] / (s[j]*s[j+1])
-             y[i][104](y[j], t1);        // t1 = y[i]*y[j]
-             t1[118](t1);                // t1 = -t1
-             s[j][104](s[j+1], t2);      // t2 = s[j]*s[j+1]
-             H[i][j] = give("0", ["all"], work_prec);
-             t1[103](t2, H[i][j]);       // H[i][j] = t1 / t2
-        }
-        // Diagonal
-        if (i < n) {
-            // H[i][i] = s[i+1] / s[i]
-            H[i][i] = give("0", ["all"], work_prec);
-            s[i+1][103](s[i], H[i][i]);
-        } else {
-            H[i][i] = give("0", ["all"], work_prec);
-        }
-    }
+  // Initialize 1-based indexing for math parity
+  let x = [null, ...xInput];
+  
+  // Initialize Identity Matrix B
+  let B = [];
+  for (let i = 0; i <= n; i++) {
+      let row = [];
+      for (let j = 0; j <= n; j++) {
+          let val = give(i === j && i > 0 ? "1" : "0", funcs, precision);
+          row.push(val);
+      }
+      B.push(row);
+  }
 
-    // Initial Reduction (Hermite)
-    for (let i = 2; i <= n; i++) {
-        for (let j = i - 1; j >= 1; j--) {
-            // t = round(H[i][j] / H[j][j])
-            H[i][j][103](H[j][j], t_obj);
-            const t_big = t_obj[15](); // nint()
-            
-            if (t_big !== 0n) {
-                t_obj[116](t_big, t1); // t1 (scaled) = t_big
+  // Compute partial sums s[k]
+  let s = new Array(n + 1);
+  for (let k = 1; k <= n; k++) {
+      let sumSq = give("0", funcs, precision);
+      for (let j = k; j <= n; j++) {
+          let termSq = x[j][4](x[j]); // x[j] * x[j]
+          sumSq = sumSq[1](termSq);    // sumSq + termSq
+      }
+      s[k] = sumSq[13](); // sqrt
+  }
 
-                // y[j] += t * y[i]
-                t1[104](y[i], temp_v);
-                y[j][101](temp_v, y[j]);
+  // Normalize y and s
+  let y = new Array(n + 1);
+  let t = s[1];
+  for (let k = 1; k <= n; k++) {
+      y[k] = x[k][3](t); // x[k] / t
+      s[k] = s[k][3](t); // s[k] / t
+  }
 
-                // H[i][1..j] -= t * H[j][1..j]
-                for (let k = 1; k <= j; k++) {
-                    t1[104](H[j][k], temp_v);
-                    H[i][k][102](temp_v, H[i][k]);
-                }
+  // Initialize H matrix
+  let H = Array.from({ length: n + 1 }, () => Array(n + 1).fill(null));
+  for (let i = 1; i <= n; i++) {
+      for (let j = 1; j <= n; j++) H[i][j] = give("0", funcs, precision);
+      if (i < n) H[i][i] = s[i+1][3](s[i]); // s[i+1]/s[i]
+      for (let j = 1; j < i; j++) {
+          let num = y[i][4](y[j])[18](); // -y[i]*y[j]
+          let den = s[j][4](s[j+1]);     // s[j]*s[j+1]
+          H[i][j] = num[3](den);
+      }
+  }
 
-                // B[1..n][j] += t * B[1..n][i] (Column operations on B)
-                for (let k = 1; k <= n; k++) {
-                    t1[104](B[k][i], temp_v);
-                    B[k][j][101](temp_v, B[k][j]);
-                }
-            }
-        }
-    }
+  // --- Main Loop ---
+  for (let iter = 0; iter < iterations; iter++) {
+      // Step 1: Selection (m)
+      let m = -1;
+      let maxVal = give("-1", funcs, precision);
+      for (let i = 1; i < n; i++) {
+          let gPow = gamma[5](i); // gamma^i
+          let val = gPow[4](H[i][i][14]()); // g^i * abs(H[i][i])
+          if (val[7](maxVal)) { // val > maxVal
+              maxVal = val;
+              m = i;
+          }
+      }
 
-    // --- MAIN ITERATION LOOP ---
-    for (let step = 1; step <= maxsteps; step++) {
-        
-        // 1. Selection
-        // Find m maximizing gamma^i * |H[i][i]|
-        let m = -1;
-        let maxVal = give("-1", ["all"], work_prec);
-        
-        let gamma_pow = give("1", ["all"], work_prec); // gamma^0
-        
-        for (let i = 1; i < n; i++) {
-            gamma_pow[104](GAMMA, gamma_pow); // gamma^i
-            
-            H[i][i][114](t_obj); // abs(H[i][i])
-            gamma_pow[104](t_obj, t1); // t1 = val
-            
-            if (t1[7](maxVal)) { // if t1 > maxVal
-                t1[119](maxVal); // maxVal = t1
-                m = i;
-            }
-        }
+      // Step 2: Swap (m and m+1)
+      [y[m], y[m+1]] = [y[m+1], y[m]];
+      [H[m], H[m+1]] = [H[m+1], H[m]];
+      for (let k = 1; k <= n; k++) {
+          [B[k][m], B[k][m+1]] = [B[k][m+1], B[k][m]];
+      }
 
-        // 2. Exchange
-        // Swap y[m], y[m+1]
-        let tmpY = y[m]; y[m] = y[m+1]; y[m+1] = tmpY;
-        
-        // Swap H rows m and m+1
-        let tmpH = H[m]; H[m] = H[m+1]; H[m+1] = tmpH;
+      // Step 3: Corner Reduction
+      if (m <= n - 2) {
+          let h_mm = H[m][m];
+          let h_mm1 = H[m][m+1];
+          let t0 = (h_mm[4](h_mm)[1](h_mm1[4](h_mm1)))[13](); // sqrt(h_mm^2 + h_mm1^2)
+          let t1 = h_mm[3](t0);
+          let t2 = h_mm1[3](t0);
+          for (let i = m; i <= n; i++) {
+              let hi_m = H[i][m];
+              let hi_m1 = H[i][m+1];
+              H[i][m] = (t1[4](hi_m))[1](t2[4](hi_m1));
+              H[i][m+1] = (t1[4](hi_m1))[2](t2[4](hi_m));
+          }
+      }
 
-        // Swap B columns m and m+1
-        for (let k = 1; k <= n; k++) {
-            let tmpB = B[k][m]; B[k][m] = B[k][m+1]; B[k][m+1] = tmpB;
-        }
+      // Step 4: Hermite Reduction
+      for (let i = m + 1; i <= n; i++) {
+          for (let j = Math.min(i - 1, m + 1); j >= 1; j--) {
+              let t_coeff_big = H[i][j][3](H[j][j])[15](); // nint(H[i][j]/H[j][j])
+              if (t_coeff_big !== 0n) {
+                  let t_coeff = give(t_coeff_big.toString(), funcs, precision);
+                  y[j] = y[j][1](t_coeff[4](y[i]));
+                  for (let k = 1; k <= j; k++) {
+                      H[i][k] = H[i][k][2](t_coeff[4](H[j][k]));
+                  }
+                  for (let k = 1; k <= n; k++) {
+                      B[k][j] = B[k][j][1](t_coeff[4](B[k][i]));
+                  }
+              }
+          }
+      }
 
-        // 3. Corner Rotation (Restore Lower Trapezoidal form)
-        if (m <= n - 2) {
-            // t0 = sqrt(H[m][m]^2 + H[m][m+1]^2)
-            H[m][m][104](H[m][m], t1);      // H[m][m]^2
-            H[m][m+1][104](H[m][m+1], t2);  // H[m][m+1]^2
-            t1[101](t2, t_obj);             // sum
-            const t0 = t_obj[13]();         // sqrt
-            
-            // t1 = H[m][m] / t0  (cosine)
-            // t2 = H[m][m+1] / t0 (sine)
-            const param1 = give("0", ["all"], work_prec);
-            const param2 = give("0", ["all"], work_prec);
-            H[m][m][103](t0, param1);
-            H[m][m+1][103](t0, param2);
-
-            for (let i = m; i <= n; i++) {
-                const h_im = give("0", ["all"], work_prec);
-                H[i][m][119](h_im); // copy
-                const h_im1 = give("0", ["all"], work_prec);
-                H[i][m+1][119](h_im1); // copy
-
-                // H[i][m] = param1 * h_im + param2 * h_im1
-                param1[104](h_im, t1);
-                param2[104](h_im1, t2);
-                t1[101](t2, H[i][m]);
-
-                // H[i][m+1] = param1 * h_im1 - param2 * h_im
-                param1[104](h_im1, t1);
-                param2[104](h_im, t2);
-                t1[102](t2, H[i][m+1]);
-            }
-        }
-
-        // 4. Reduction (Hermite)
-        for (let i = m + 1; i <= n; i++) {
-            for (let j = Math.min(i - 1, m + 1); j >= 1; j--) {
-                // t = round(H[i][j] / H[j][j])
-                H[i][j][103](H[j][j], t_obj);
-                const t_big = t_obj[15](); // nint()
-
-                if (t_big !== 0n) {
-                    t_obj[116](t_big, t1); // t1 (scaled) = t_big
-
-                    // y[j] += t * y[i]
-                    t1[104](y[i], temp_v);
-                    y[j][101](temp_v, y[j]);
-
-                    // H[i][1..j] -= t * H[j][1..j]
-                    for (let k = 1; k <= j; k++) {
-                        t1[104](H[j][k], temp_v);
-                        H[i][k][102](temp_v, H[i][k]);
-                    }
-
-                    // B[1..n][j] += t * B[1..n][i]
-                    for (let k = 1; k <= n; k++) {
-                        t1[104](B[k][i], temp_v);
-                        B[k][j][101](temp_v, B[k][j]);
-                    }
-                }
-            }
-        }
-
-        // --- Termination Check ---
-        // Calculate min(|y[i]|)
-        let minNorm = give("1", ["all"], work_prec)[104](give("10", ["all"], work_prec), t1); // Start Huge
-        let minIndex = -1;
-
-        for (let i = 1; i <= n; i++) {
-            y[i][114](t_obj); // abs(y[i])
-            if (t_obj[6](minNorm)) { // < minNorm
-                t_obj[119](minNorm);
-                minIndex = i;
-            }
-        }
-
-        // If minNorm is small enough, the column B[...][minIndex] is our relation
-        if (minNorm[6](LIMIT)) {
-             if (verbose) console.log(`FOUND relation at iter ${step}`);
-             const res = [];
-             for(let k = 1; k <= n; k++) {
-                 // Convert BigInt to JS Number for output
-                 res.push(parseInt(B[k][minIndex][12]())); 
-             }
-             return res;
-        }
-    }
-
-    return null;
+      // Step 5: Termination Check
+      for (let i = 1; i <= n; i++) {
+          if (y[i][14]()[6](TOL)) { // abs(y[i]) < TOL
+              let relation = [];
+              for (let k = 1; k <= n; k++) {
+                  relation.push(B[k][i][11]().toString()); // toInt().toString()
+              }
+              return relation;
+          }
+      }
+  }
+  return null;
 }
