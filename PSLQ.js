@@ -243,7 +243,7 @@ function pslq(xInput, precision, iterations = 10000) {
   const TOL = give("0.000000000000000000000000000001", funcs, precision);
 
   // Initialize 1-based indexing for math parity
-  let x = [null, ...xInput];
+  let x = [null, ...xInput.map(val => give(val, funcs, precision))];
   
   // Initialize Identity Matrix B
   let B = [];
